@@ -63,6 +63,40 @@ python flash_write.py device_full.bin --apply
 `build_flash_image.py` asserts that every expected old byte matches your device dump before
 building, so it is safe to run even if your unit differs slightly.
 
+## Sensor framerate profiles (new)
+
+Following the downshift port, the sensor **framerate** scripts were patched too. Stock Luna
+firmware runs the PAW3950 with a floating frame time (rest-mode ~150 µs ≈ 6.7 kfps up to
+50 µs = 20 kfps while sweeping). Three firmware variants are supported:
+
+| variant | HyperMode ON | HyperMode OFF | spec |
+|---|---|---|---|
+| `FPS20K` | locked 20 kfps | locked 20 kfps | [`patch_spec_LUNA_FPS20K.json`](patch_spec_LUNA_FPS20K.json) |
+| `HYBRID` | locked 20 kfps | stock adaptive (power saving) | same spec, only the 3 `B(Hyper)` sites |
+| `STOCK-FPS` | stock | stock | no framerate edits |
+
+The recipe (from hyperdrako's `debounce_patch.py` notes, re-derived for the Luna image):
+`07:0x42=0x14` (25 µs frame unit) + `06:0x53=0x02` + `06:0x62=0x02` fixes the frame time at
+50 µs = **20000 fps**; `06:0x6D/0x6E` restore the rest-mode thresholds. 18 edit sites
+(3 in the HyperMode script `B`, 5 in each of the three HyperMode-off script copies
+`copy2a/2b/2c` — wired / dongle / BT branches), all `movs r1, #imm` form.
+
+```bash
+cd tools
+# build the FPS20K image from your dump, flash, verify (18/18 + 28/28 read-back)
+python check_fps.py      # after flashing flash_fps.bin
+python check_hybrid.py   # after flashing flash_hybrid.bin (3 locked + 15 stock)
+python switch_fw.py hybrid   # one-command switcher: hybrid | fps | stock
+```
+
+`switch.bat` is a double-clickable Windows wrapper (picks the bundled Python, shows a menu).
+
+## App-mode config protocol (cls 1, unrelated to the bootloader)
+
+- `0x00` set polling rate / `0x80` read — encoding `1`=1000 Hz, `32`=2000, `64`=4000, `128`=8000
+- `0x0B` set HyperMode / `0x8B` read — `tools/hyper.py` and `tools/setrate.py` wrap these
+- works over wired (`PID 0x0054`) and the 8 K receiver (`PID 0x0084`), always via `MI_02`
+
 ## How the port was derived
 
 The KO-ONE patch addresses don't exist in the Luna image (same-address byte identity is only
@@ -105,7 +139,8 @@ The KO-ONE patch addresses don't exist in the Luna image (same-address byte iden
 ## Files
 
 ```
-patch_spec_LUNA_A.json   28-site patch table (address, old bytes, new bytes)
-tools/                   flash, dump, build, verify utilities (run from this dir)
-analysis/                how the patch spec was derived from hyperdrako's
+patch_spec_LUNA_A.json       28-site downshift patch table
+patch_spec_LUNA_FPS20K.json  18-site 20 kfps framerate patch table
+tools/                       flash, dump, build, verify, HyperMode/rate, switcher utilities
+analysis/                    how the patch specs were derived from hyperdrako's
 ```
