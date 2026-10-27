@@ -1,0 +1,10 @@
+# firmware images / device dumps are never committed
+*.xvi
+*.bin
+*.hex
+# intermediate analysis output
+*.json.bak
+mapped.json
+mapped2.json
+writes.json
+__pycache__/
